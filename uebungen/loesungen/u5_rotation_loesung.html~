@@ -1,0 +1,266 @@
+<!doctype html>
+<!--
+Animieren Sie das Dreieck aus Aufgabe 4, indem Sie dieses um die Z-Achse herum drehen. Nutzen Sie für die Transformation der 3D Daten in den 2D Raum eine Projection-Matrix und animieren Sie das Modell über eine Model-Matrix.
+-->
+<head> 
+<meta charset=utf-8> 
+
+<title>WebGL Praktikum - Aufgabe 5 - Rotation</title> 
+
+<!-- glMatrix für Matrix Funktionen -->
+<script type="text/javascript" src="js/glMatrix.js"></script> 
+ 
+<!-- 
+Ein Fragment Shader, welcher für jedes Fragment die Farbe setzt, 
+welche er aus dem Varying vom Vertexshader übergeben bekommt
+-->
+<script id="shader-fs" type="x-shader/x-fragment"> 
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    varying vec3 vColor; 
+
+	void main(void) {
+        gl_FragColor = vec4(vColor, 1.0);
+    }
+</script> 
+ 
+<!-- 
+Ein Vertex Shader welcher jede Vertexposition mit der Model- und Projection-Matrix transformiert und in die gl_Position schreibt und die Vertex Farbe als Varying an den Fragment Shader weiterreicht
+-->
+<script id="shader-vs" type="x-shader/x-vertex"> 
+    attribute vec3 aVertexPosition;
+    attribute vec3 aVertexColor;
+
+	uniform mat4 uMMatrix;
+	uniform mat4 uPMatrix;
+
+	varying vec3 vColor; 
+
+    void main(void) {
+		vColor = aVertexColor;
+        gl_Position = uPMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+    }
+</script> 
+ 
+ 
+<script type="text/javascript"> 
+ 
+    var gl;
+
+	//WebGL Context aus Canvas ermitteln
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+ 
+    //Vertex und Fragment Shader laden
+    function getShader(gl, id) {
+    
+        //Shader ID aus dem DOM ermitteln
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+        
+        //Inhalt des Elementes in einen String speichern
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+        
+        //Fragment oder Vertex Shader anlegen
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+    
+        //String Inhalt an den Shader binden und diesen compilieren
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+ 
+        //Fehlerüberprüfung
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+ 
+        return shader;
+    }
+ 
+ 
+    var shaderProgram;
+ 
+	//Shaderprogramm festlegen
+    function initShaders() {
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader = getShader(gl, "shader-vs");
+ 
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+ 
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+ 
+        gl.useProgram(shaderProgram);
+ 
+		//Attribut für die Vertexposition
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+		//Attribut für die Vertexfarbe
+        shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
+        gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute);
+
+	    //Uniform für die Projection-Matrix
+        shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+
+	    //Uniform für die Model-Matrix
+        shaderProgram.mMatrixUniform = gl.getUniformLocation(shaderProgram, "uMMatrix");
+    }
+
+	//Model-Matrix
+    var mMatrix = mat4.create();
+	//Projection-Matrix
+    var pMatrix = mat4.create();
+ 
+	//Bindet die Matrizen an das Shaderprogramm
+    function setMatrixUniforms() {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mMatrixUniform, false, mMatrix);
+    }
+ 
+    var modelVertexPositionBuffer;
+ 
+	//Alle verwendeten VertexBuffer der Scene werden hier initialisiert
+    function initBuffers() {      
+
+		//VertexBuffer für ein Dreieck       
+		modelVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+        vertices = [
+            -0.5,  -0.5,  0.0,
+             0.5,  -0.5,  0.0,
+             0.0,   0.5,  0.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        modelVertexPositionBuffer.itemSize = 3;
+        modelVertexPositionBuffer.numItems = 3;
+
+		//Farbe für jeden Vertex in einem neuen VertexBuffer
+        modelVertexColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexColorBuffer);
+        vertices = [
+             1.0,  1.0,  0.0,
+             0.0,  1.0,  1.0,
+             1.0,  0.0,  1.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        modelVertexColorBuffer.itemSize = 3;
+        modelVertexColorBuffer.numItems = 3;
+    }
+
+	//Scene wird hier gezeichnet	
+    function drawScene() {
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+	    //Perspective wird gesetzt und in die Projection-Matrix geschrieben
+	    mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+
+	    //Model-Matrix in jedem Frame zurücksetzen
+	    mat4.identity(mMatrix);
+
+	    //Model in der Z Achse verschieben damit es sichtbar ist
+	    mat4.translate(mMatrix, [0.0, 0.0, -2.0]);
+
+	    //Rotiere um die X und Y Achse
+	    mat4.rotate(mMatrix, degToRad(xRot), [0, 0, 1]);
+
+	    //Buffer für das Dreieck wird gebunden und gezeichnet
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute,modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+	    //Buffer für die Farben binden
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexColorBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexColorAttribute,modelVertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            
+	    //Sendet die aktuellen Matrizen an das Shaderprogramm
+	    setMatrixUniforms(); 	
+	    gl.drawArrays(gl.TRIANGLES, 0, modelVertexPositionBuffer.numItems);
+    }
+
+    var lastTime = 0;
+    var xRot = 0;
+
+    //Animiert Objekte indem einige Variablen hochgezählt werden
+    function animate() {
+        var timeNow = new Date().getTime();
+        if (lastTime != 0) {
+            // Zeit zwischen einem Frame
+	        var deltaTime = timeNow - lastTime; 
+            xRot += (deltaTime) / 100.0;
+        }
+        lastTime = timeNow;
+    }
+ 
+ 
+ 	//Main Methode
+    function main() {
+        var canvas = document.getElementById("canvas");
+        initGL(canvas);
+        initShaders()
+        initBuffers();
+ 
+        //Setzt den Renderausschnitt auf den gesamten Canvas
+		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+		
+        gl.clearColor(0.9, 0.9, 0.9, 1.0);
+	
+        tick();
+    }
+    
+    window.requestAnimationFrame = window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || window.msRequestAnimationFrame;
+ 
+    //Erfragt bei Browser einen neuen Renderframe und zeichnet dann die Scene neu
+    function tick() {        
+        drawScene();
+	    animate();	    
+        requestAnimationFrame(tick);
+    }
+	    
+	//Hilfsfunktion um die Grad zu Radiant umwandelt
+   function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+
+ 
+</script> 
+ 
+ 
+</head> 
+ 
+<!-- das Canvas Element mit einer Größe von 512x512 Pixeln -->
+<body onload="main();"> 
+    <canvas id="canvas" style="border: none;" width="512" height="512"></canvas>  
+</body> 
+ 
+</html> 

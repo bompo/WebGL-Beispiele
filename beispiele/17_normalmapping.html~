@@ -1,0 +1,477 @@
+<!doctype html>
+<!--
+In diesem Beispiel wird ein Rechteck dargestellt, welches translatiert, rotiert und texturiert wird. Dabei wird durch die Normal-Mapping Technik der Eindruck einer Steinwand auf der Textur erzeugt. 
+-->
+<head> 
+<meta charset=utf-8> 
+
+<title>WebGL Praktikum - Beispiel 17 - Normal-Mapping</title> 
+ 
+<script type="text/javascript" src="js/glMatrix.js"></script> 
+ 
+<!-- 
+Ein Fragment Shader, welcher für jedes Fragment die Farbe setzt. Statt der Normale des Modells wird die Normale aus einer Normalen-Textur ermittelt. Diese Normale wird anschließend für die Blinn Berechnung genutzt. Dabei wird der diffuse Einfluss des Punktlichtes berechnet, indem der Winkel zwischen Normale und Lichtrichtung errechnet wird. Für die Berechnung des spekularen Einfluss wird vorerst der Halbvektor, welcher zwischen dem Augrichtungsvektor und Lichtrichtungsvektor liegt berechnet. Mit dem Winkel zwischen Halbvektor und Normale wird schließlich der spekulare Anteil berechnet. Zusätzlich addiert er eine ambiente Lichtfarbe, um nicht beleuchtete Stellen auszufüllen.
+-->
+<script id="shader-fs" type="x-shader/x-fragment"> 
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+	varying vec2 vTextureCoord;
+    varying vec3 vTransformedNormal;
+    varying vec4 vPosition;
+    varying vec3 vEyeDirection;
+    varying vec3 vLightDirection;
+
+    uniform vec3 uLightingDiffuseColor;
+    uniform vec3 uLightingSpecularColor;
+    uniform vec3 uLightingAmbientColor;
+
+    uniform float uShininess;
+ 
+    uniform sampler2D uSamplerDiffuse;
+    uniform sampler2D uSamplerLight;
+ 
+    void main(void) {
+
+        vec3 normal = texture2D(uSamplerLight, vec2(vTextureCoord.s, vTextureCoord.t)).xyz;
+        normal = normalize(normal *2.0 - 1.0 );
+
+        float diffuseLightWeighting = max(dot(normalize(normal), vLightDirection), 0.0);
+
+        vec3 halfEyeLight = normalize(vEyeDirection + vLightDirection);
+        float specularLightWeighting = pow(max(dot(normalize(normal),halfEyeLight),0.0),uShininess);
+
+        vec3 lightWeighting = uLightingAmbientColor
+                + (uLightingDiffuseColor * diffuseLightWeighting) 
+                + (uLightingSpecularColor * specularLightWeighting);
+
+        vec4 textureColor = texture2D(uSamplerDiffuse, vec2(vTextureCoord.s, vTextureCoord.t));
+        gl_FragColor = vec4(textureColor.rgb * lightWeighting, textureColor.a);
+    }
+</script> 
+
+<!-- 
+Ein Vertex Shader, welcher jede Vertexposition mit der Model- und Projection-Matrix transformiert und in die gl_Position schreibt und die transformierte Position und Texturkoordinate, als Varyings an den Fragment Shader weiterreicht. Desweiteren transformiert er den Augrichtungsvektor und Lichtrichtungsvektor in den Tangentenraum, indem er aus der Tangente, Binormale und Normale eine Transformationsmatrix erstellt. 
+-->
+<script id="shader-vs" type="x-shader/x-vertex"> 
+    attribute vec3 aVertexPosition;
+    attribute vec3 aVertexNormal;
+    attribute vec3 aVertexTangent;
+    attribute vec2 aTextureCoord;
+
+	uniform mat4 uMMatrix;
+	uniform mat4 uPMatrix;
+    uniform mat3 uNMatrix;
+    uniform vec3 uLightingPosition;
+
+	varying vec2 vTextureCoord;
+    varying vec3 vTransformedNormal;
+    varying vec4 vPosition;
+    varying vec3 vEyeDirection;
+    varying vec3 vLightDirection;
+
+    void main(void) {
+        vPosition = uMMatrix * vec4(aVertexPosition, 1.0);
+        gl_Position = uPMatrix * vPosition;
+        vTextureCoord = aTextureCoord;
+
+        //transformiere Normale und Tangente
+        vTransformedNormal = uNMatrix * aVertexNormal;
+        vec3 vertexTangend = uNMatrix * aVertexTangent;
+
+        //Aug- und Lichtrichtungsvektor im Tangentenraum
+        vec3 eyeDirection = normalize(-vPosition.xyz);
+        vec3 lightDirection = normalize(uLightingPosition - vPosition.xyz);
+
+        vec3 binormal = normalize(cross(vTransformedNormal, vertexTangend));
+        mat3 tangentMat = mat3(vertexTangend,binormal,vTransformedNormal);
+
+        vEyeDirection = eyeDirection * tangentMat;
+        vLightDirection = lightDirection * tangentMat;
+    }
+</script> 
+ 
+ 
+<script type="text/javascript"> 
+ 
+    var gl;
+
+	//WebGL Context aus Canvas ermitteln
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+ 
+	 //Vertex und Fragment Shader laden
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+ 
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+ 
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+ 
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+ 
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+ 
+        return shader;
+    }
+ 
+ 
+    var shaderProgram;
+ 
+	//Shaderprogramm festlegen
+    function initShaders() {
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader = getShader(gl, "shader-vs");
+ 
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+ 
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+ 
+        gl.useProgram(shaderProgram);
+ 
+		//Attribut für die Vertexposition
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+        //Attribut für die Vertexnormale
+        shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+        gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+
+        //Attribut für die Vertextangente
+        shaderProgram.vertexTangentAttribute = gl.getAttribLocation(shaderProgram, "aVertexTangent");
+        gl.enableVertexAttribArray(shaderProgram.vertexTangentAttribute);
+
+		//Attribut für die Texturkoordinate
+        shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+        gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
+	    //Uniform für die Projection-Matrix
+        shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+
+	    //Uniform für die Model-Matrix
+        shaderProgram.mMatrixUniform = gl.getUniformLocation(shaderProgram, "uMMatrix");
+
+	    //Uniform für die Normalen-Matrix
+        shaderProgram.nMatrixUniform = gl.getUniformLocation(shaderProgram, "uNMatrix");
+
+        //Uniform für die Diffuse Textur
+        shaderProgram.samplerDiffuseUniform = gl.getUniformLocation(shaderProgram, "uSamplerDiffuse");
+
+        //Uniform für die Light Textur
+        shaderProgram.samplerLightUniform = gl.getUniformLocation(shaderProgram, "uSamplerLight");
+
+        //Uniform für die Position des Lichtes
+        shaderProgram.lightingPositionUniform = gl.getUniformLocation(shaderProgram, "uLightingPosition");
+
+        //Uniform für den diffusen Anteil des Lichtes
+        shaderProgram.lightingDiffuseColorUniform = gl.getUniformLocation(shaderProgram, "uLightingDiffuseColor");
+
+        //Uniform für den ambienten Anteil des Lichtes
+        shaderProgram.lightingAmbientColorUniform = gl.getUniformLocation(shaderProgram, "uLightingAmbientColor");
+
+        //Uniform für den spekularen Anteil des Lichtes
+        shaderProgram.lightingSpecularColorUniform = gl.getUniformLocation(shaderProgram, "uLightingSpecularColor");
+
+        //Uniform für die shininess des Lichtes
+        shaderProgram.lightingShininessUniform = gl.getUniformLocation(shaderProgram, "uShininess");
+    }
+
+    
+    //Textur einrichten
+    function handleLoadedTexture(texture) {
+        //Textur binden
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        
+        //Texturkoordinaten um die Y Achse spiegeln
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        
+        //Image Inhalt in Textur speichern
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+        
+        //Filter einrichten: hier LINEAR
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        
+        //Textur entbinden
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+    
+    var diffuseTexture;
+    var normalTexture;
+ 
+    //Laden der Texturen
+    function initTextures() {
+        diffuseTexture = gl.createTexture();
+        diffuseTexture.image = new Image();
+        diffuseTexture.image.onload = function () {
+            handleLoadedTexture(diffuseTexture)
+        }
+        diffuseTexture.image.src = "./data/diffuse.jpg";
+
+        normalTexture = gl.createTexture();
+        normalTexture.image = new Image();
+        normalTexture.image.onload = function () {
+            handleLoadedTexture(normalTexture)
+        }
+        normalTexture.image.src = "./data/normal.jpg";
+    }
+
+
+	//modelmatrix
+    var mMatrix = mat4.create();
+	//Projectionsmatrix
+    var pMatrix = mat4.create();
+ 
+	//Bindet die Matrizen an das Shaderprogramm
+    function setMatrixUniforms() {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mMatrixUniform, false, mMatrix);
+
+        var normalMatrix = mat3.create();
+        mat4.toInverseMat3(mMatrix, normalMatrix);
+        mat3.transpose(normalMatrix);
+        gl.uniformMatrix3fv(shaderProgram.nMatrixUniform, false, normalMatrix);
+    }
+ 
+    var modelVertexPositionBuffer;
+    var modelVertexColorBuffer;
+    var modelVertexNormalBuffer;
+    var modelVertexTangentBuffer;
+    var modelVertexBinormalBuffer;
+ 
+	//Alle verwendeten VertexBuffer der Szene werden hier initialisiert
+    function initBuffers() {      
+
+	    //VertexBuffer für einen dreidimensionalen Würfel
+        modelVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+        vertices = [
+            // Front face
+            -1.0, -1.0,  1.0,
+             1.0, -1.0,  1.0,
+             1.0,  1.0,  1.0,
+            -1.0,  1.0,  1.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        modelVertexPositionBuffer.itemSize = 3;
+        modelVertexPositionBuffer.numItems = 4;
+
+        //VertexBuffer für die Normalen des Würfels
+        modelVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexNormalBuffer);
+        var vertexNormals = [
+            // Front face
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
+        modelVertexNormalBuffer.itemSize = 3;
+        modelVertexNormalBuffer.numItems = 4;
+
+        //VertexBuffer für die Tangenten des Würfels
+        modelVertexTangentBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexTangentBuffer);
+        var vertexTangents = [
+            // Front face
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexTangents), gl.STATIC_DRAW);
+        modelVertexTangentBuffer.itemSize = 3;
+        modelVertexTangentBuffer.numItems = 4;
+
+        //VertexBuffer für die Texturkoordinaten des Würfels
+        modelVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexTextureCoordBuffer);
+        var textureCoords = [
+          // Front face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+        modelVertexTextureCoordBuffer.itemSize = 2;
+        modelVertexTextureCoordBuffer.numItems = 4;
+  
+        modelVertexIndexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, modelVertexIndexBuffer);
+        var modelVertexIndices = [
+            0, 1, 2, 0, 2, 3,    // Front face
+        ];
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(modelVertexIndices), gl.STATIC_DRAW);
+        modelVertexIndexBuffer.itemSize = 1;
+        modelVertexIndexBuffer.numItems = 6;
+    }
+
+
+	//Szene wird hier gezeichnet	
+    function drawScene() {
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+	    //Perspective wird gesetzt und in die Porjection-Matrix geschrieben
+	    mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+
+	    //Model-Matrix in jedem Frame zurücksetzen
+	    mat4.identity(mMatrix);
+
+	    //Model in der Z Achse verschieben, damit es sichtbar ist
+	    mat4.translate(mMatrix, [0.0, 0.0, -4.0]);
+
+	    //Rotiere um die X und Y Achse
+	    mat4.rotate(mMatrix, degToRad(Math.sin(xRot)*20), [1, 0, 0]);
+	    mat4.rotate(mMatrix, degToRad(Math.cos(yRot)*20), [0, 1, 0]);
+
+	    //Buffer für die Vertexpositiones des Würfel wird gebunden
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute,modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+        //Buffer für die Vertexnormalen des Würfels wird gebunden
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexNormalBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, modelVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+        //Buffer für die Vertexnormalen des Würfels wird gebunden
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexTangentBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexTangentAttribute, modelVertexTangentBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+        //Buffer der Texturkoordinaten wird gebunden
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexTextureCoordBuffer);
+        gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, modelVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+        //Texture aktivieren und die Diffuse-Texture binden
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, diffuseTexture);
+        gl.uniform1i(shaderProgram.samplerDiffuseUniform, 0);
+
+        //Texture aktivieren und die Normalen-Texture binden
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, normalTexture);
+        gl.uniform1i(shaderProgram.samplerLightUniform, 1);
+
+        
+        //Ambiente Farbe des Lichtes setzen
+        gl.uniform3f(shaderProgram.lightingAmbientColorUniform, 0.1,0.1,0.1);
+
+        //Difusse Farbe des Lichtes setzen
+        gl.uniform3f(shaderProgram.lightingDiffuseColorUniform, 0.9,0.9,0.9);
+
+        //Speculare Farbe des Lichtes setzen
+        gl.uniform3f(shaderProgram.lightingSpecularColorUniform, 0.8,0.8,0.8);
+
+        //Shininess des Lichtes setzen        
+        gl.uniform1f(shaderProgram.lightingShininessUniform,32.0);
+
+        //Position des Lichtes setzen        
+        gl.uniform3f(shaderProgram.lightingPositionUniform, 0.0,0.0,5.0);
+
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, modelVertexIndexBuffer);
+
+	    //Sendet die aktuellen Matrizen an das Shaderprogramm
+        setMatrixUniforms();
+        gl.drawElements(gl.TRIANGLES, modelVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+    }
+
+    var lastTime = 0;
+    var xRot = 0;
+    var yRot = 0; 
+
+    //Animiert Objekte indem einige Variablen hochgezählt werden
+    function animate() {
+        var timeNow = new Date().getTime();
+        if (lastTime != 0) {
+            // Zeit zwischen einem Frame
+	    var deltaTime = timeNow - lastTime;
+ 
+            xRot += (deltaTime) / 1000.0;
+            yRot += (deltaTime) / 1000.0;
+        }
+        lastTime = timeNow;
+    }
+ 
+ 
+ 	//Main Methode
+    function main() {
+        var canvas = document.getElementById("canvas");
+        initGL(canvas);
+        initShaders();
+        initBuffers();
+        initTextures();
+
+        //Setzt den Renderausschnitt auf den gesamten Canvas
+		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+		
+        gl.clearColor(0.9, 0.9, 0.9, 1.0);
+        
+        //Tiefentest aktivieren
+        gl.enable(gl.DEPTH_TEST);
+	
+        tick();
+    }
+ 
+    window.requestAnimationFrame = window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || window.msRequestAnimationFrame;
+ 
+    //Erfragt bei Browser einen neuen Renderframe und zeichnet dann die Scene neu
+    function tick() {
+        window.requestAnimationFrame(tick);
+        drawScene();
+	    animate();
+    }
+
+	//Hilfsfunktion die Grad zu Radiant umwandelt
+   function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+
+ 
+</script> 
+ 
+ 
+</head> 
+ 
+<!-- das Canvas Element mit einer Größe von 512x512 Pixeln -->
+<body onload="main();"> 
+    <canvas id="canvas" style="border: none;" width="512" height="512"></canvas>  
+</body> 
+
+</html> 

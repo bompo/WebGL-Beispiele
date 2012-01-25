@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+Erstellen Sie eine HTML Seite, welche ein Canvas Element mit der Größe 800x480 Pixel beinhaltet. Erstellen Sie über dieses Canvas Element den WebGL Kontext. Setzen Sie die clearColor auf blau und löschen Sie anschließend den Farbbuffer. 
+-->
+<head> 
+<meta charset=utf-8> 
+
+<title>WebGL Praktikum - Übung 1 - Render Kontext</title> 
+  
+<script type="text/javascript">  
+
+    //globale Variable in welcher der Render Kontext gespeichert wird
+    var gl;
+
+	//WebGL Render Kontext aus Canvas ermitteln
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    } 
+ 
+ 	//Main Methode
+    function main() {
+        var canvas = document.getElementById("canvas");
+        initGL(canvas);
+ 
+        //Setzt den Renderausschnitt auf den gesamten Canvas
+		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+        //Setzt die Löschfarbe fest
+        gl.clearColor(0.45, 0.6, 1.0, 1.0);
+
+  		//Löscht den aktuellen Canvas
+        gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+ 
+</script> 
+ 
+ 
+</head> 
+ 
+<!-- das Canvas Element mit einer Größe von 800x480 Pixeln -->
+<body onload="main();"> 
+    <canvas id="canvas" style="border: none;" width="800" height="480"></canvas>  
+</body> 
+ 
+</html> 
