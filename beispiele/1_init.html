@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+In diesem Beispiel wird der WebGL Render Kontext des Canvas Elementes angefordert und anschließend der Canvas mit einer hellgrauen Farbe eingefärbt.
+-->
+<head> 
+<meta charset=utf-8> 
+
+<title>WebGL Praktikum - Beispiel 1 - Render Kontext</title> 
+  
+<script type="text/javascript">  
+
+    //globale Variable in welcher der Render Kontext gespeichert wird
+    var gl;
+
+	//WebGL Render Kontext aus Canvas ermitteln
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    } 
+ 
+ 	//Main Methode
+    function main() {
+        var canvas = document.getElementById("canvas");
+        initGL(canvas);
+ 
+        //Setzt den Renderausschnitt auf den gesamten Canvas
+		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+        //Setzt die Löschfarbe fest
+        gl.clearColor(0.9, 0.9, 0.9, 1.0);
+
+  		//Löscht den aktuellen Canvas
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    }
+ 
+</script> 
+ 
+ 
+</head> 
+ 
+<!-- das Canvas Element mit einer Größe von 512x512 Pixeln -->
+<body onload="main();"> 
+    <canvas id="canvas" style="border: none;" width="512" height="512"></canvas>  
+</body>
+
+</html>

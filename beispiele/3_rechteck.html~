@@ -1,0 +1,185 @@
+<!doctype html>
+<!--
+In diesem Beispiel wird ein grünes Rechteck gezeichnet.
+Dazu müssen die Positionen des Rechteckes in Clipped Space Coordinates in einen VBO gespeichert werden. Dieser wird anschließend an das Attribut aVertexPosition gebunden und das Rechteck über einen Triangle Strip gerendert.
+-->
+<head> 
+<meta charset=utf-8> 
+
+<title>WebGL Praktikum - Beispiel 3 - Einfaches 2D Rechteck</title> 
+  
+<!-- 
+Ein einfacher Fragment Shader, welcher 
+für jedes Fragment die Farbe dunkelgrün setzt. 
+-->
+<script id="shader-fs" type="x-shader/x-fragment"> 
+    void main(void) {
+        gl_FragColor = vec4(0.6, 0.6, 0.0, 1.0);
+    }
+</script> 
+ 
+<!-- 
+Ein einfacher Vertex Shader, welcher 
+jede Vertexposition in die gl_Position schreibt.
+-->
+<script id="shader-vs" type="x-shader/x-vertex"> 
+    attribute vec3 aVertexPosition;
+ 
+    void main(void) {
+        gl_Position = vec4(aVertexPosition, 1.0);
+    }
+</script>  
+ 
+<script type="text/javascript"> 
+ 
+    //globale Variable in welcher der Render Kontext gespeichert wird
+    var gl;
+ 
+	//WebGL Context aus Canvas ermitteln
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+ 
+    //Vertex und Fragment Shader laden
+    function getShader(gl, id) {
+    
+        //Shader ID aus dem DOM ermitteln
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+        
+        //Inhalt des Elementes in einen String speichern
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+        
+        //Fragment oder Vertex Shader anlegen
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+    
+        //String Inhalt an den Shader binden und diesen compilieren
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+ 
+        //Fehlerüberprüfung
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+ 
+        return shader;
+    }
+ 
+ 
+    //das Shaderprogramm
+    var shaderProgram;
+ 
+	//Shaderprogramm festlegen
+    function initShaders() {
+        
+        //Fragment und Vertex Shader Objekt laden
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader = getShader(gl, "shader-vs");
+ 
+        //Shaderprogramm erstellen und Shader Objekte binden
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+ 
+        //Fehlerüberprüfung
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+        
+        //Shaderprogramm aktivieren
+        gl.useProgram(shaderProgram);
+ 
+	    //Attribut für die Vertexposition ermitteln und aktivieren
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+    }
+ 
+    var modelVertexPositionBuffer;
+ 
+	//Alle verwendeten VertexBuffer der Scene werden hier initialisiert
+    function initBuffers() {   
+
+		//VertexBuffer für ein Rechteck in Clipped Space Coordinates 
+        modelVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+        vertices = [
+             0.5,  0.5,  0.0,
+            -0.5,  0.5,  0.0,
+             0.5, -0.5,  0.0,
+            -0.5, -0.5,  0.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        modelVertexPositionBuffer.itemSize = 3;
+        modelVertexPositionBuffer.numItems = 4;
+    }
+
+	//Scene wird hier gezeichnet
+    function drawScene() {
+
+		//Buffer für das Rechteck wird gebunden
+        gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+        
+        //Vertexposition Attribut wird für den Buffer festgelegt
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute,modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+        
+        //Buffer wird über ein Triangle Strip gezeichnet
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, modelVertexPositionBuffer.numItems);
+    }
+ 
+ 
+ 	//Main Methode
+    function main() {
+        var canvas = document.getElementById("canvas");
+        initGL(canvas);
+        initShaders()
+        initBuffers();
+ 
+        //Setzt den Renderausschnitt auf den gesamten Canvas
+		gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+        //Setzt die Löschfarbe fest
+        gl.clearColor(0.9, 0.9, 0.9, 1.0);
+
+  		//Löscht den aktuellen Canvas
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	
+        drawScene();
+    }
+ 
+</script> 
+ 
+ 
+</head> 
+ 
+<!-- das Canvas Element mit einer Größe von 512x512 Pixeln -->
+<body onload="main();"> 
+    <canvas id="canvas" style="border: none;" width="512" height="512"></canvas>  
+</body> 
+ 
+</html> 
